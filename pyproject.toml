@@ -1,0 +1,30 @@
+[project]
+name = "lean-infer"
+version = "0.1.0"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.1",
+    "torch>=2.7",
+]
+
+[project.scripts]
+leaninfer = "leaninfer.main:main"
+
+# CPU-only torch wheels. The Radeon 860M is an iGPU with no ROCm support, so
+# there's no GPU to target locally; this also avoids ~2.5GB of unused CUDA libs.
+# For a cloud NVIDIA box later, switch the url to https://download.pytorch.org/whl/cu128
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["leaninfer"]
