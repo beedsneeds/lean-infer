@@ -54,16 +54,17 @@ class Qwen3Attention(nn.Module):
         self.k_norm = nn.RMSNorm(HEAD_DIM, eps=EPS)
         self.o_proj = nn.Linear(N_HEADS * HEAD_DIM, HIDDEN, bias=False)
 
-    def forward(self, x, cos, sin):
-        seq = x.shape[0]
-        q = self.q_norm(self.q_proj(x).view(seq, N_HEADS, HEAD_DIM)).transpose(0, 1)
-        k = self.k_norm(self.k_proj(x).view(seq, N_KV_HEADS, HEAD_DIM)).transpose(0, 1)
-        v = self.v_proj(x).view(seq, N_KV_HEADS, HEAD_DIM).transpose(0, 1)
+    def forward(self, x, cos, sin, cache, layer_idx):
+        n = x.shape[0]
+        q = self.q_norm(self.q_proj(x).view(n, N_HEADS, HEAD_DIM)).transpose(0, 1)
+        k = self.k_norm(self.k_proj(x).view(n, N_KV_HEADS, HEAD_DIM)).transpose(0, 1)
+        v = self.v_proj(x).view(n, N_KV_HEADS, HEAD_DIM).transpose(0, 1)
         q = apply_rope(q, cos, sin)
         k = apply_rope(k, cos, sin)
-
-        o = F.scaled_dot_product_attention(q, k, v, is_causal=True, enable_gqa=True)
-        o = o.transpose(0, 1).reshape(seq, N_HEADS * HEAD_DIM)
+        k, v = cache.update(k, v, layer_idx)
+        causal = q.shape[1] == k.shape[1]  # True only for prefill
+        o = F.scaled_dot_product_attention(q, k, v, is_causal=causal, enable_gqa=True)
+        o = o.transpose(0, 1).reshape(n, N_HEADS * HEAD_DIM)
         return self.o_proj(o)
 
 
@@ -75,8 +76,8 @@ class Qwen3DecoderLayer(nn.Module):
         self.input_layernorm = nn.RMSNorm(HIDDEN, eps=EPS)
         self.post_attention_layernorm = nn.RMSNorm(HIDDEN, eps=EPS)
 
-    def forward(self, h, cos, sin):
-        h = h + self.self_attn(self.input_layernorm(h), cos, sin)
+    def forward(self, h, cos, sin, cache, layer_idx):
+        h = h + self.self_attn(self.input_layernorm(h), cos, sin, cache, layer_idx)
         h = h + self.mlp(self.post_attention_layernorm(h))
         return h
 
@@ -88,11 +89,12 @@ class Qwen3Model(nn.Module):
         self.layers = nn.ModuleList(Qwen3DecoderLayer() for _ in range(N_LAYERS))
         self.norm = nn.RMSNorm(HIDDEN, eps=EPS)
 
-    def forward(self, input_ids):
+    def forward(self, input_ids, cache):
+        past = cache.get_seq_length()                    # positions already cached (0 at prefill)
         h = self.embed_tokens(input_ids)
-        cos, sin = build_rope(input_ids.shape[0])
-        for layer in self.layers:
-            h = layer(h, cos, sin)
+        cos, sin = build_rope(input_ids.shape[0], offset=past)
+        for i, layer in enumerate(self.layers):
+            h = layer(h, cos, sin, cache, i)
         return self.norm(h)
 
 
@@ -101,7 +103,6 @@ class Qwen3ForCausalLM(nn.Module):
         super().__init__(*args, **kwargs)
         self.model = Qwen3Model()
 
-    def forward(self, input_ids):
-        h = self.model(input_ids)
-        # reusing embedding matrix as op proj since checkpoint doesn't have a lm_head.weight
+    def forward(self, input_ids, cache):
+        h = self.model(input_ids, cache)
         return F.linear(h, self.model.embed_tokens.weight)

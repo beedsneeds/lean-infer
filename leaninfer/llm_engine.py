@@ -1,14 +1,17 @@
 import torch
 from leaninfer.oracle import STOP_IDS
+from transformers import DynamicCache
 
 @torch.no_grad()
 def greedy(model, ids, n=64):
-    ids = ids.clone()
+    cache = DynamicCache()
     out = []
+    x = ids
     for _ in range(n):
-        nxt = int(model(ids)[-1].argmax())
+        logits = model(x, cache) # prefill
+        nxt = int(logits[-1].argmax())
         out.append(nxt)
         if nxt in STOP_IDS:
             break
-        ids = torch.cat([ids, ids.new_tensor([nxt])]) 
+        x = ids.new_tensor([nxt]) # consume only new token 
     return out

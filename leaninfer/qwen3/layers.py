@@ -8,9 +8,10 @@ ROPE_THETA   = 1_000_000
 
 
 
-def build_rope(seq_len):
+def build_rope(n, offset=0):
     inv_freq = 1.0 / (ROPE_THETA ** (torch.arange(0, HEAD_DIM, 2).float() / HEAD_DIM))
-    angles = torch.outer(torch.arange(seq_len).float(), inv_freq)
+    pos = torch.arange(offset, offset + n).float()     # absolute positions offset..offset+n-1
+    angles = torch.outer(pos, inv_freq)
     emb = torch.cat((angles, angles), dim=-1)
     return emb.cos(), emb.sin()
 
