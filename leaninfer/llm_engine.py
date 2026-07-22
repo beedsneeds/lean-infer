@@ -1,11 +1,13 @@
 import torch
 from leaninfer.oracle import STOP_IDS
 from transformers import DynamicCache
+from torch import Tensor
+from leaninfer.qwen3.model import Qwen3ForCausalLM
 
 @torch.no_grad()
-def greedy(model, ids, n=64):
+def greedy(model: Qwen3ForCausalLM, ids: Tensor, n: int=64) -> list[int]:
     cache = DynamicCache()
-    out = []
+    out: list[int] = []
     x = ids
     for _ in range(n):
         logits = model(x, cache) # prefill

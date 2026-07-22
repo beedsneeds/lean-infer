@@ -1,6 +1,7 @@
 """HuggingFace greedy decode — the correctness oracle. Match its tokens exactly."""
 
 import torch
+from torch import Tensor
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 MODEL_ID = "Qwen/Qwen3-0.6B"
@@ -16,7 +17,7 @@ model = AutoModelForCausalLM.from_pretrained(
 
 
 @torch.no_grad()
-def greedy(ids, n=64):
+def greedy(ids: Tensor, n: int=64) -> list[int]:
     out = []
     for _ in range(n):
         nxt = int(model(ids).logits[0, -1].argmax())

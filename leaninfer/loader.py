@@ -5,7 +5,7 @@ argmax-per-position == HF oracle's argmax-per-position (teacher forcing).
 """
 
 import torch
-from torch import nn
+from torch import nn, Tensor
 from torch.nn import functional as F
 from safetensors import safe_open
 from huggingface_hub import hf_hub_download
@@ -23,14 +23,14 @@ from leaninfer.qwen3.model import Qwen3ForCausalLM
 # params load as fp32 (bf16 checkpoint is cast on copy_), matching the fp32 oracle.
 
 
-def load_model(path=None):
+def load_model(path: str | None = None) -> Qwen3ForCausalLM:
     if path is None:
         path = hf_hub_download("Qwen/Qwen3-0.6B", "model.safetensors")
 
     
     model = Qwen3ForCausalLM()
     with safe_open(path, "pt", "cpu") as f:
-        W = {name: f.get_tensor(name) for name in f.keys()}
+        W: dict[str, Tensor] = {name: f.get_tensor(name) for name in f.keys()}
     W.pop("lm_head.weight")        # redundant duplicate of model.embed_tokens.weight (tied)
     # alternatively just declare lm_head
     model.load_state_dict(W)

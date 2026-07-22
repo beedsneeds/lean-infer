@@ -25,9 +25,24 @@ explicit = true
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
 
+[tool.pyright]
+include = ["leaninfer"]
+pythonVersion = "3.13"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+reportMissingTypeStubs = false
+reportMissingParameterType = "error"
+
+
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.411",
+]
 
 [tool.setuptools]
 packages = ["leaninfer"]
