@@ -23,5 +23,19 @@ def rotate_half(x: Tensor) -> Tensor:
 def apply_rope(x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
     return x * cos + rotate_half(x) * sin
 
+def build_mask(mask: Tensor, q_len: int) -> Tensor:
+    # 1 = real, 0 = pad
+    # returns additive float mask [B, 1, q_len, S] for SDPA (0=attend, -inf=forbid)
+    # S = past + q_len
+    _, s = mask.shape
+    key = torch.where(mask.bool(), 0.0, float("-inf"))[:, None, None, :] # [B, 1, 1, S]
+    if q_len == 1:
+        return key # decode
+    causal = torch.triu(torch.full((q_len, s), float("-inf")), diagonal=1)   # [q,S], q==S at prefill
+    m = causal[None, None] + key
+    diag = torch.arange(q_len)
+    m[:, :, diag, diag] = 0.0 
+    return m     
+
 
 
