@@ -1,10 +1,8 @@
 from torch import nn
 from torch.nn import functional as F
 from leaninfer.qwen3.layers import apply_rope, build_rope, build_mask
-from transformers import Qwen3Config
-from transformers import AutoModelForCausalLM
 from torch import Tensor
-from transformers import Cache
+from leaninfer.engine.cache_manager import SlotCache
 
 
 # ---- config (from config.json) ----
@@ -56,14 +54,15 @@ class Qwen3Attention(nn.Module):
         self.k_norm = nn.RMSNorm(HEAD_DIM, eps=EPS)
         self.o_proj = nn.Linear(N_HEADS * HEAD_DIM, HIDDEN, bias=False)
 
-    def forward(self, x: Tensor, cos: Tensor, sin: Tensor, cache: Cache, layer_idx: int, attn_mask: Tensor) -> Tensor:
+    def forward(self, x: Tensor, cos: Tensor, sin: Tensor, cache: SlotCache, layer_idx: int, attn_mask: Tensor, slots: Tensor, pos: Tensor, s: int) -> Tensor:
         b, n, _ = x.shape
         q = self.q_norm(self.q_proj(x).view(b, n, N_HEADS, HEAD_DIM)).transpose(1, 2)
         k = self.k_norm(self.k_proj(x).view(b, n, N_KV_HEADS, HEAD_DIM)).transpose(1, 2)
         v = self.v_proj(x).view(b, n, N_KV_HEADS, HEAD_DIM).transpose(1, 2)
         q = apply_rope(q, cos, sin)
         k = apply_rope(k, cos, sin)
-        k, v = cache.update(k, v, layer_idx)
+        cache.write(layer_idx, slots, pos, k, v)
+        k, v = cache.read(layer_idx, slots, s)
         o = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, enable_gqa=True)
         o = o.transpose(1, 2).reshape(b, n, N_HEADS * HEAD_DIM)
         return self.o_proj(o)
@@ -77,10 +76,11 @@ class Qwen3DecoderLayer(nn.Module):
         self.input_layernorm = nn.RMSNorm(HIDDEN, eps=EPS)
         self.post_attention_layernorm = nn.RMSNorm(HIDDEN, eps=EPS)
 
-    def forward(self, h: Tensor, cos: Tensor, sin: Tensor, cache: Cache, layer_idx: int, attn_mask: Tensor) -> Tensor:
-        h = h + self.self_attn(self.input_layernorm(h), cos, sin, cache, layer_idx, attn_mask)
+    def forward(self, h: Tensor, cos: Tensor, sin: Tensor, cache: SlotCache, layer_idx: int, attn_mask: Tensor, slots: Tensor, pos: Tensor, s: int) -> Tensor:
+        h = h + self.self_attn(self.input_layernorm(h), cos, sin, cache, layer_idx, attn_mask, slots, pos, s)
         h = h + self.mlp(self.post_attention_layernorm(h))
         return h
+
 
 
 class Qwen3Model(nn.Module):
@@ -90,13 +90,13 @@ class Qwen3Model(nn.Module):
         self.layers = nn.ModuleList(Qwen3DecoderLayer() for _ in range(N_LAYERS))
         self.norm = nn.RMSNorm(HIDDEN, eps=EPS)
 
-    def forward(self, input_ids: Tensor, cache: Cache, attn_mask: Tensor) -> Tensor:
-        past = cache.get_seq_length()                    # positions already cached (0 at prefill)
+    def forward(self, input_ids: Tensor, cache: SlotCache, slots: Tensor, pos: Tensor, s: int) -> Tensor:
+        q_len = input_ids.shape[1]
         h = self.embed_tokens(input_ids)
-        cos, sin = build_rope(input_ids.shape[1], offset=past)
-        m = build_mask(attn_mask, input_ids.shape[1])
+        cos, sin = build_rope(pos, q_len)
+        m = build_mask(pos, q_len, s)
         for i, layer in enumerate(self.layers):
-            h = layer(h, cos, sin, cache, i, m)
+            h = layer(h, cos, sin, cache, i, m, slots, pos, s)
         return self.norm(h)
 
 
@@ -105,6 +105,6 @@ class Qwen3ForCausalLM(nn.Module):
         super().__init__()
         self.model = Qwen3Model()
 
-    def forward(self, input_ids: Tensor, cache: Cache, attn_mask: Tensor) -> Tensor:
-        h = self.model(input_ids, cache, attn_mask)
+    def forward(self, input_ids: Tensor, cache: SlotCache, slots: Tensor, pos: Tensor, s: int) -> Tensor:
+        h = self.model(input_ids, cache, slots, pos, s)
         return F.linear(h, self.model.embed_tokens.weight)

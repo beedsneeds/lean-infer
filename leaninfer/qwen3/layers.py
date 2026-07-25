@@ -9,12 +9,14 @@ ROPE_THETA   = 1_000_000
 
 
 
-def build_rope(n: int, offset: int=0) -> tuple[Tensor, Tensor]:
-    inv_freq = 1.0 / (ROPE_THETA ** (torch.arange(0, HEAD_DIM, 2).float() / HEAD_DIM))
-    pos = torch.arange(offset, offset + n).float()     # absolute positions offset..offset+n-1
-    angles = torch.outer(pos, inv_freq)
-    emb = torch.cat((angles, angles), dim=-1)
-    return emb.cos(), emb.sin()
+def build_rope(pos: Tensor, q_len: int) -> tuple[Tensor, Tensor]:
+    """pos: [B] each row's start position (tokens already cached)"""
+    inv_freq = 1.0 / (ROPE_THETA ** (torch.arange(0, HEAD_DIM, 2).float() / HEAD_DIM)) # [D/2]
+    positions = pos[:, None] + torch.arange(q_len)      # [B, q_len] broadcast
+    angles = positions[..., None].float() * inv_freq    # [B, q_len, D/2]
+    emb = torch.cat((angles, angles), dim=-1)           # [B, q_len, D]
+    return emb.cos()[:, None], emb.sin()[:, None]       # cos/sin [B, 1, q_len, D]
+
 
 def rotate_half(x: Tensor) -> Tensor:
     x1, x2 = x.chunk(2, dim=-1)
@@ -23,19 +25,14 @@ def rotate_half(x: Tensor) -> Tensor:
 def apply_rope(x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
     return x * cos + rotate_half(x) * sin
 
-def build_mask(mask: Tensor, q_len: int) -> Tensor:
+def build_mask(pos: Tensor, q_len: int, s: int) -> Tensor:
+    """returns additive float mask [B, 1, q_len, S] for SDPA (0=attend, -inf=forbid)"""
     # 1 = real, 0 = pad
-    # returns additive float mask [B, 1, q_len, S] for SDPA (0=attend, -inf=forbid)
-    # S = past + q_len
-    _, s = mask.shape
-    key = torch.where(mask.bool(), 0.0, float("-inf"))[:, None, None, :] # [B, 1, 1, S]
-    if q_len == 1:
-        return key # decode
-    causal = torch.triu(torch.full((q_len, s), float("-inf")), diagonal=1)   # [q,S], q==S at prefill
-    m = causal[None, None] + key
-    diag = torch.arange(q_len)
-    m[:, :, diag, diag] = 0.0 
-    return m     
+    key_pos = torch.arange(s)                                  # [S]
+    query_pos = pos[:, None] + torch.arange(q_len)             # [B, q_len]
+    allowed = key_pos[None, None, :] <= query_pos[:, :, None]  # [B, q_len, S]
+    return torch.where(allowed, 0.0, float("-inf"))[:, None]   # [B, 1, q_len, S]
+
 
 
 
