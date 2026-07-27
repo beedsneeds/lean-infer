@@ -11,8 +11,9 @@ ROPE_THETA   = 1_000_000
 
 def build_rope(pos: Tensor, q_len: int) -> tuple[Tensor, Tensor]:
     """pos: [B] each row's start position (tokens already cached)"""
-    inv_freq = 1.0 / (ROPE_THETA ** (torch.arange(0, HEAD_DIM, 2).float() / HEAD_DIM)) # [D/2]
-    positions = pos[:, None] + torch.arange(q_len)      # [B, q_len] broadcast
+    dev = pos.device
+    inv_freq = 1.0 / (ROPE_THETA ** (torch.arange(0, HEAD_DIM, 2, device=dev).float() / HEAD_DIM)) # [D/2]
+    positions = pos[:, None] + torch.arange(q_len, device=dev)      # [B, q_len] broadcast
     angles = positions[..., None].float() * inv_freq    # [B, q_len, D/2]
     emb = torch.cat((angles, angles), dim=-1)           # [B, q_len, D]
     return emb.cos()[:, None], emb.sin()[:, None]       # cos/sin [B, 1, q_len, D]
@@ -28,8 +29,9 @@ def apply_rope(x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
 def build_mask(pos: Tensor, q_len: int, s: int) -> Tensor:
     """returns additive float mask [B, 1, q_len, S] for SDPA (0=attend, -inf=forbid)"""
     # 1 = real, 0 = pad
-    key_pos = torch.arange(s)                                  # [S]
-    query_pos = pos[:, None] + torch.arange(q_len)             # [B, q_len]
+    dev = pos.device
+    key_pos = torch.arange(s, device=dev)                                  # [S]
+    query_pos = pos[:, None] + torch.arange(q_len, device=dev)             # [B, q_len]
     allowed = key_pos[None, None, :] <= query_pos[:, :, None]  # [B, q_len, S]
     return torch.where(allowed, 0.0, float("-inf"))[:, None]   # [B, 1, q_len, S]
 

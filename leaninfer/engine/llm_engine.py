@@ -39,21 +39,24 @@ def trim(row: list[int]) -> list[int]:
 
 
 class LLMEngine:
-    def __init__(self, n_slots: int, max_len: int) -> None:
+    def __init__(self, n_slots: int, max_len: int, device: torch.device | str = "cpu", dtype: torch.dtype = torch.float32) -> None:
         self.scheduler = Scheduler(n_slots)
         self.n_slots = n_slots
         self.max_len = max_len
+        self.device = device
+        self.dtype = dtype
 
 
-    def run_step(self, model: Qwen3ForCausalLM, cache: SlotCache, reqs: list[Request], prefill: bool) -> None:
+    def run_step(self, model: Qwen3ForCausalLM, cache: SlotCache, reqs: list[Request], prefill: bool) -> None:               
+            dev = cache.device
             if prefill:
                 print("llm_engine.py: prefilling")
                 r = reqs[0]     # [1, prompt_len]
-                ids = torch.tensor([r.prompt])
+                ids = torch.tensor([r.prompt], device=dev)
             else: 
-                ids = torch.tensor([[r.out[-1]] for r in reqs]) # [B, 1]
-            slots = torch.tensor([r.slot for r in reqs])
-            pos = torch.tensor([r.pos for r in reqs])
+                ids = torch.tensor([[r.out[-1]] for r in reqs], device=dev) # [B, 1]
+            slots = torch.tensor([r.slot for r in reqs], device=dev)
+            pos = torch.tensor([r.pos for r in reqs], device=dev)
             q_len = ids.shape[1]
             s = int((pos + q_len).max())
 
@@ -63,13 +66,13 @@ class LLMEngine:
                 r.pos += q_len
                 r.out.append(tok)
 
-
-    def generate(self, model: Qwen3ForCausalLM, prompts: list[list[int]], max_new: int = 64) -> list[Request]:
+    @torch.no_grad()
+    def generate(self, model: Qwen3ForCausalLM, prompts: list[list[int]], max_new: int) -> list[Request]:
             print("llm_engine.py: engining")
             done: list[Request] = []
             for i, p in enumerate(prompts):
                  self.scheduler.add(Request(id=i, prompt=p, max_new=max_new))
-            cache = SlotCache(self.n_slots, self.max_len)
+            cache = SlotCache(self.n_slots, self.max_len, self.device, self.dtype)
 
             while self.scheduler.busy():
                 req = self.scheduler.admit()

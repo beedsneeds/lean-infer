@@ -14,11 +14,11 @@ class SlotCache:
     Pool shape: [N_LAYERS, n_blocks, block_size, K_KV_HEADS, HEAD_DIM]
     """
 
-    def __init__(self, n_slots: int, max_len: int, dtype: torch.dtype = torch.float32) -> None:
+    def __init__(self, n_slots: int, max_len: int, device: torch.device | str = "cpu", dtype: torch.dtype = torch.float32) -> None:
         shape = (N_LAYERS, n_slots, max_len, N_KV_HEADS, HEAD_DIM)
-        self.k = torch.zeros(shape, dtype=dtype)
-        self.v = torch.zeros(shape, dtype=dtype)
-
+        self.k = torch.zeros(shape, dtype=dtype, device=device)
+        self.v = torch.zeros(shape, dtype=dtype, device=device)
+        self.device = torch.device(device)
 
 
     def write(self, layer: int, slots: Tensor, pos: Tensor, k: Tensor, v: Tensor) -> None:
@@ -26,7 +26,7 @@ class SlotCache:
         # k,v shape: [B, N_KV_HEADS, q_len, HEAD_DIM]
         # pool stores [.., col, heads, dim]
         q_len = k.shape[2]
-        cols = pos[:, None] + torch.arange(q_len)   # [B, q_len]
+        cols = pos[:, None] + torch.arange(q_len, device=pos.device)   # [B, q_len]
         self.k[layer, slots[:, None], cols] = k.transpose(1, 2) # [B, q_len, N_KV_HEADS, HEAD_DIM]
         self.v[layer, slots[:, None], cols] = v.transpose(1, 2)
 

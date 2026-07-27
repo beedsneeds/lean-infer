@@ -23,7 +23,7 @@ from leaninfer.qwen3.model import Qwen3ForCausalLM
 # params load as fp32 (bf16 checkpoint is cast on copy_), matching the fp32 oracle.
 
 
-def load_model(path: str | None = None) -> Qwen3ForCausalLM:
+def load_model(path: str | None = None, device: torch.device | str = "cpu", dtype: torch.dtype = torch.float32) -> Qwen3ForCausalLM:
     if path is None:
         path = hf_hub_download("Qwen/Qwen3-0.6B", "model.safetensors")
 
@@ -34,7 +34,7 @@ def load_model(path: str | None = None) -> Qwen3ForCausalLM:
     W.pop("lm_head.weight")        # redundant duplicate of model.embed_tokens.weight (tied)
     # alternatively just declare lm_head
     model.load_state_dict(W)
-    return model.eval()
+    return model.eval().to(device=device, dtype=dtype)
 
 
 if __name__ == "__main__":
