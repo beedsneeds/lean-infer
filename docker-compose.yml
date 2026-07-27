@@ -1,0 +1,64 @@
+# Observability only. The engine itself runs bare on the host
+# Usage: 
+# 1. uv run leaninfer 
+# 2. docker compose up or 
+# ENGINE_HOST_IP=$(hostname -I | awk '{print $1}') docker compose up -d
+# L4 only: docker compose --profile gpu up + uncomment the dcgm job in ops/prometheus/prometheus.yml.
+services:
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: leaninfer-prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=3d
+    extra_hosts:
+      # "engine" is the alias ops/prometheus/prometheus.yml scrapes.
+      # Native Linux (the L4): leave ENGINE_HOST_IP unset. host-gateway resolves to
+      # the bridge gateway, which reaches processes on the host. This is the path
+      # that matters in production.
+      #   ENGINE_HOST_IP=$(hostname -I | awk '{print $1}') docker compose up -d
+      - "engine:${ENGINE_HOST_IP:-host-gateway}"
+
+  grafana:
+    image: grafana/grafana:11.5.1
+    container_name: leaninfer-grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    environment:
+      # Local convenience: skip the login wall entirely. TURN THIS OFF on the GCP
+      # box — that VM has a public IP and this is anonymous admin access.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    depends_on:
+      - prometheus
+
+  dcgm-exporter:
+    image: nvcr.io/nvidia/k8s/dcgm-exporter:3.3.9-3.6.1-ubuntu22.04
+    container_name: leaninfer-dcgm
+    profiles: [gpu]
+    ports:
+      - "9400:9400"
+    cap_add:
+      - SYS_ADMIN
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  prometheus-data:
+  grafana-data:

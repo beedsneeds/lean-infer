@@ -1,7 +1,8 @@
-
+import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum, auto
+from leaninfer import metrics
 
 class State(Enum):
     WAITING = auto()
@@ -18,6 +19,20 @@ class Request:
     slot: int = -1 # scheduler slot number
     pos: int = 0 # tokens of this request in the cache
     out: list[int] = field(default_factory=list)
+    t_arrival: float = 0.0
+    t_admit: float = 0.0
+    t_first: float = 0.0
+    t_last: float = 0.0
+
+    @property
+    def ttft(self) -> float:
+        return self.t_first - self.t_arrival
+
+    @property
+    def tpot(self) -> float:
+        n = len(self.out) - 1
+        return (self.t_last - self.t_first) / n if n > 0 else 0.0
+
 
 class Scheduler:
     def __init__(self, n_slots: int) -> None:
@@ -26,10 +41,12 @@ class Scheduler:
         self.running: list[Request] = []
 
     def add(self, req: Request) -> None:
+        req.t_arrival = time.perf_counter()
         self.waiting.append(req)
+        metrics.WAITING.set(len(self.waiting))
 
     # TODO: add bulk method?
-
+    
 
     def admit(self) -> Request | None:
         """Admit a Request into a slot. 
@@ -40,6 +57,10 @@ class Scheduler:
         req.slot = self.free_slots.popleft()
         req.state = State.RUNNING
         self.running.append(req)
+        req.t_admit = time.perf_counter()
+        metrics.QUEUE_DELAY.observe(req.t_admit - req.t_arrival)
+        metrics.WAITING.set(len(self.waiting))
+        metrics.RUNNING.set(len(self.running))
         return req
 
     # Push the slot back into free so it can be used
@@ -48,6 +69,7 @@ class Scheduler:
         req.state = State.FINISHED
         self.free_slots.append(req.slot)
         self.running.remove(req)
+        metrics.RUNNING.set(len(self.running))
 
     def busy(self) -> bool:
         return bool(self.waiting or self.running)

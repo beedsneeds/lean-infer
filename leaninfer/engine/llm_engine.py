@@ -1,11 +1,13 @@
-import torch
+import torch, time
 from leaninfer.oracle import STOP_IDS
 from transformers import DynamicCache
 from torch import Tensor
+from leaninfer import metrics
 from leaninfer.qwen3.model import Qwen3ForCausalLM
 from leaninfer.engine.scheduler import Scheduler, Request
 from leaninfer.engine.cache_manager import SlotCache
 from dataclasses import dataclass
+
 
 STOP = torch.tensor(sorted(STOP_IDS))
 
@@ -60,11 +62,25 @@ class LLMEngine:
             q_len = ids.shape[1]
             s = int((pos + q_len).max())
 
-            logits: Tensor = model(ids, cache, slots, pos, s)        
-            nxt = logits[:, -1].argmax(-1)
-            for r, tok in zip(reqs, nxt.tolist()):
+            phase = "prefill" if prefill else "decode"
+            with metrics.STEP_DURATION.labels(phase=phase).time():
+                logits: Tensor = model(ids, cache, slots, pos, s)        
+                nxt = logits[:, -1].argmax(-1)
+                toks = nxt.tolist()
+
+            if prefill:
+                metrics.PROMPT_TOKENS.inc(q_len)
+            # True for prefill as well since reqs is 1
+            metrics.OUTPUT_TOKENS.inc(len(reqs))
+                 
+            now = time.perf_counter()
+            for r, tok in zip(reqs, toks):
                 r.pos += q_len
                 r.out.append(tok)
+                if not r.t_first:
+                    r.t_first = now
+                    metrics.TTFT.observe(now - r.t_arrival)
+                r.t_last = now
 
     @torch.no_grad()
     def generate(self, model: Qwen3ForCausalLM, prompts: list[list[int]], max_new: int) -> list[Request]:
@@ -83,12 +99,14 @@ class LLMEngine:
                      self.run_step(model, cache, self.scheduler.running, prefill=False)
 
                 for r in list(self.scheduler.running):
-                     if r.out[-1] in STOP_IDS or len(r.out) >= r.max_new:
+                    if r.out[-1] in STOP_IDS or len(r.out) >= r.max_new:
                         #   cache.free
                         self.scheduler.retire(r)
                         done.append(r)
                         print("llm_engine.py: retiring")
+                        metrics.TPOT.observe(r.tpot)
 
+                metrics.KV_TOKENS.set(sum(r.pos for r in self.scheduler.running))
 
             return done
 
