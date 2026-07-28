@@ -17,4 +17,4 @@
 
 DCGM_FI_DEV_FB_USED,        gauge, Framebuffer memory used (MiB).
 DCGM_FI_DEV_GPU_UTIL,       gauge, Fraction of time any kernel was resident (%). Coarse - reads near 100 during decode regardless of how well the SMs are fed.
-DCGM_FI_DEV_POWER_USAGE,    gauge, Power draw (W). The L4 caps at 72W, so this pinning is the first sign of clock throttling.
+DCGM_FI_DEV_POWER_USAGE,    gauge, Power draw (W). The L4 caps at 72W so this pinning is the first sign of clock throttling.

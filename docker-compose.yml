@@ -50,8 +50,7 @@ services:
     profiles: [gpu]
     volumes:
       - ./ops/dcgm/counters.csv:/etc/dcgm-exporter/leaninfer-counters.csv:ro
-    command:
-      - ["-f", "/etc/dcgm-exporter/leaninfer-counters.csv"]
+    command: ["-f", "/etc/dcgm-exporter/leaninfer-counters.csv"]
     ports:
       - "127.0.0.1:9400:9400"
     environment:
