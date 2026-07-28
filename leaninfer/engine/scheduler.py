@@ -26,6 +26,10 @@ class Request:
     t_last: float = 0.0
 
     @property
+    def prefill_time(self) -> float:
+        return self.t_first - self.t_admit
+    
+    @property
     def ttft(self) -> float:
         return self.t_first - self.t_arrival
 
@@ -46,8 +50,6 @@ class Scheduler:
         req.t_arrival = time.perf_counter()
         self.waiting.append(req)
         metrics.WAITING.set(len(self.waiting))
-
-    # TODO: add bulk method?
     
 
     def admit(self) -> Request | None:

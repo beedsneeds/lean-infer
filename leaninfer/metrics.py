@@ -23,9 +23,15 @@ TTFT: Histogram = Histogram(
     "position, not engine speed — so queue_delay",
     buckets=_LATENCY,
 )
+# We don't really need this. Can be inferred by above/below
 QUEUE_DELAY: Histogram = Histogram(
     "leaninfer_queue_delay_seconds",
     "Time between arrival to admission. TTFT minus this is the engine's own prefill cost",
+    buckets=_LATENCY,
+)
+PREFILL: Histogram = Histogram(
+    "leaninfer_prefill_seconds",
+    "Engine prefill cost per request: TTFT minus queue delay, measured at first token.",
     buckets=_LATENCY,
 )
 TPOT: Histogram = Histogram(
@@ -39,6 +45,14 @@ STEP_DURATION: Histogram = Histogram(
     ["phase"],  # "prefill" | "decode"
     buckets=_STEP,
 )
+
+# Delete once you check variance
+OUTPUT_LEN: Histogram = Histogram(
+    "leaninfer_output_len_tokens",
+    "Tokens generated per request before stop or budget exhaustion.",
+    buckets=(1, 2, 4, 8, 16, 24, 32, 48, 64, 80, 96, 128, 192, 256),
+)
+
 
 # Occupancy
 RUNNING: Gauge = Gauge(

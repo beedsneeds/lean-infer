@@ -210,7 +210,7 @@
       "pluginVersion": "11.5.1",
       "targets": [
         {
-          "editorMode": "builder",
+          "editorMode": "code",
           "expr": "rate(leaninfer_step_duration_seconds_sum[30s]) / rate(leaninfer_step_duration_seconds_count[30s])",
           "legendFormat": "__auto",
           "range": true,
@@ -286,7 +286,7 @@
         "x": 0,
         "y": 8
       },
-      "id": 1,
+      "id": 6,
       "options": {
         "legend": {
           "calcs": [],
@@ -308,34 +308,19 @@
             "uid": "PBFA97CFB590B2093"
           },
           "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "leaninfer_kv_cache_tokens / leaninfer_kv_cache_capacity_tokens",
-          "fullMetaSearch": false,
-          "includeNullMetadata": true,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "leaninfer_requests_running / 10",
+          "editorMode": "code",
+          "expr": "rate(leaninfer_prefill_seconds_sum[15s])\r\n/\r\nrate(leaninfer_prefill_seconds_count[15s])",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
-          "refId": "B",
+          "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "KV Cache Util + Reqs Running",
+      "title": "Prefill Time (not TTFT since Saturated Queue)",
       "type": "timeseries"
     },
     {
@@ -422,7 +407,7 @@
       "targets": [
         {
           "disableTextWrap": false,
-          "editorMode": "builder",
+          "editorMode": "code",
           "expr": "leaninfer_ttft_seconds_sum / leaninfer_ttft_seconds_count",
           "fullMetaSearch": false,
           "hide": true,
@@ -450,7 +435,7 @@
           "useBackend": false
         }
       ],
-      "title": "Time Per Output Token",
+      "title": "Time Per Output Token (TPOT)",
       "type": "timeseries"
     },
     {
@@ -519,7 +504,7 @@
         "x": 0,
         "y": 16
       },
-      "id": 3,
+      "id": 1,
       "options": {
         "legend": {
           "calcs": [],
@@ -536,14 +521,39 @@
       "pluginVersion": "11.5.1",
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "leaninfer_ttft_seconds_sum / leaninfer_ttft_seconds_count",
+          "expr": "leaninfer_kv_cache_tokens / leaninfer_kv_cache_capacity_tokens",
+          "fullMetaSearch": false,
+          "includeNullMetadata": true,
           "legendFormat": "__auto",
           "range": true,
-          "refId": "A"
+          "refId": "A",
+          "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "leaninfer_requests_running / 10",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "B",
+          "useBackend": false
         }
       ],
-      "title": "Time To First Token",
+      "title": "KV Cache Util + Reqs Running",
       "type": "timeseries"
     }
   ],
@@ -555,13 +565,13 @@
     "list": []
   },
   "time": {
-    "from": "2026-07-27T07:23:27.894Z",
-    "to": "2026-07-27T07:25:26.551Z"
+    "from": "now-15m",
+    "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "New dashboard",
   "uid": "dftcnq16p0irkf",
-  "version": 7,
+  "version": 12,
   "weekStart": ""
 }

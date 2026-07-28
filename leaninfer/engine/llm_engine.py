@@ -56,15 +56,17 @@ class LLMEngine:
                 r.out.append(tok)
                 if not r.t_first:
                     r.t_first = now
-                    metrics.TTFT.observe(now - r.t_arrival)
+                    metrics.TTFT.observe(r.ttft)
+                    metrics.PREFILL.observe(r.prefill_time)
                 r.t_last = now
 
     @torch.no_grad()
-    def generate(self, model: Qwen3ForCausalLM, prompts: list[list[int]]) -> list[Request]:
+    def generate(self, model: Qwen3ForCausalLM, prompts: list[list[int]], max_new: list[int] | None = None) -> list[Request]:
             print("llm_engine.py: engining")
+            budgets = max_new if max_new is not None else [self.engine_config.max_new] * len(prompts)
             done: list[Request] = []
-            for i, p in enumerate(prompts):
-                 self.scheduler.add(Request(id=i, prompt=p, max_new=self.engine_config.max_new))
+            for i, (p, n) in enumerate(zip(prompts, budgets)):
+                self.scheduler.add(Request(id=i, prompt=p, max_new=n))
             cache = SlotCache(model.config, self.engine_config)
 
             while self.scheduler.busy():
