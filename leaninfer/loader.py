@@ -1,16 +1,9 @@
-"""Qwen3-0.6B forward pass, from scratch. Fill in the bodies.
-
-Correctness check (no cache yet): run forward over the prompt and confirm
-argmax-per-position == HF oracle's argmax-per-position (teacher forcing).
-"""
-
-import torch
-from torch import nn, Tensor
-from torch.nn import functional as F
+from torch import  Tensor
 from safetensors import safe_open
 from huggingface_hub import hf_hub_download
-from transformers import AutoTokenizer
 from leaninfer.qwen3.model import Qwen3ForCausalLM 
+from leaninfer.qwen3.model_config import ModelConfig, MODEL_ID
+from leaninfer.engine.engine_config import EngineConfig
 
 
 # ---- weights ----
@@ -23,26 +16,17 @@ from leaninfer.qwen3.model import Qwen3ForCausalLM
 # params load as fp32 (bf16 checkpoint is cast on copy_), matching the fp32 oracle.
 
 
-def load_model(path: str | None = None, device: torch.device | str = "cpu", dtype: torch.dtype = torch.float32) -> Qwen3ForCausalLM:
+def load_model(model_config: ModelConfig, engine_config: EngineConfig, path: str | None = None) -> Qwen3ForCausalLM:
     if path is None:
-        path = hf_hub_download("Qwen/Qwen3-0.6B", "model.safetensors")
+        path = hf_hub_download(MODEL_ID, "model.safetensors")
 
     
-    model = Qwen3ForCausalLM()
+    model = Qwen3ForCausalLM(model_config)
     with safe_open(path, "pt", "cpu") as f:
         W: dict[str, Tensor] = {name: f.get_tensor(name) for name in f.keys()}
     W.pop("lm_head.weight")        # redundant duplicate of model.embed_tokens.weight (tied)
     # alternatively just declare lm_head
     model.load_state_dict(W)
-    return model.eval().to(device=device, dtype=dtype)
+    return model.eval().to(device=engine_config.device, dtype=engine_config.dtype)
 
 
-if __name__ == "__main__":
-    # from leaninfer.oracle import tok, model as ref
-    load_model()
-    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B")
-    ids  = tokenizer("The capital of France is", return_tensors="pt").input_ids[0]
-    # mine = forward(ids, W).argmax(-1)                 # [seq]
-    # gold = ref(ids[None]).logits[0].argmax(-1)        # HF per-position argmax
-    # print(torch.equal(mine, gold), mine.tolist(), gold.tolist())
-    ...

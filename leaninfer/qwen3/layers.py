@@ -1,18 +1,13 @@
 
 import torch
 from torch import Tensor
+from leaninfer.qwen3.model_config import ModelConfig
 
 
-HEAD_DIM     = 128 # decoupled. N_HEADS * HEAD_DIM = 2048 != HIDDEN
-
-ROPE_THETA   = 1_000_000
-
-
-
-def build_rope(pos: Tensor, q_len: int) -> tuple[Tensor, Tensor]:
+def build_rope(config: ModelConfig, pos: Tensor, q_len: int) -> tuple[Tensor, Tensor]:
     """pos: [B] each row's start position (tokens already cached)"""
     dev = pos.device
-    inv_freq = 1.0 / (ROPE_THETA ** (torch.arange(0, HEAD_DIM, 2, device=dev).float() / HEAD_DIM)) # [D/2]
+    inv_freq = 1.0 / (config.rope_theta ** (torch.arange(0, config.head_dim, 2, device=dev).float() / config.head_dim)) # [D/2]
     positions = pos[:, None] + torch.arange(q_len, device=dev)      # [B, q_len] broadcast
     angles = positions[..., None].float() * inv_freq    # [B, q_len, D/2]
     emb = torch.cat((angles, angles), dim=-1)           # [B, q_len, D]

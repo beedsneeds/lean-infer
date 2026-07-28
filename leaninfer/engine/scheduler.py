@@ -3,6 +3,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from leaninfer import metrics
+from leaninfer.engine.engine_config import EngineConfig
 
 class State(Enum):
     WAITING = auto()
@@ -14,7 +15,7 @@ class State(Enum):
 class Request:
     id: int
     prompt: list[int]
-    max_new: int = 64
+    max_new: int
     state: State = State.WAITING
     slot: int = -1 # scheduler slot number
     pos: int = 0 # tokens of this request in the cache
@@ -35,8 +36,9 @@ class Request:
 
 
 class Scheduler:
-    def __init__(self, n_slots: int) -> None:
-        self.free_slots: deque[int] = deque(range(n_slots))
+    def __init__(self, config: EngineConfig) -> None:
+        self.config = config
+        self.free_slots: deque[int] = deque(range(config.n_slots))
         self.waiting: deque[Request] = deque()
         self.running: list[Request] = []
 

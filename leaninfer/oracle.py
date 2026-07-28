@@ -3,11 +3,11 @@
 import torch
 from torch import Tensor
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from leaninfer.qwen3.model_config import MODEL_ID
 
-MODEL_ID = "Qwen/Qwen3-0.6B"
 STOP_IDS = {151645, 151643}  # <|im_end|>, <|endoftext|>
 
-tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B")
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 # fp32 on purpose: CPU fp16 kernels are missing/slow, and HF upcasts norms/softmax to
 # fp32 internally anyway — matching it in bf16 is MORE work, not less. Revisit only on GPU.
 # eager = the naive softmax(QKᵀ/√d)·V path, i.e. the same math our engine will write.

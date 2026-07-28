@@ -1,9 +1,10 @@
 # Observability only. The engine itself runs bare on the host
-# Usage: 
-# 1. uv run leaninfer 
-# 2. docker compose up or 
+# Usage:
+# 1. uv run leaninfer
+# 2. docker compose up or
 # ENGINE_HOST_IP=$(hostname -I | awk '{print $1}') docker compose up -d
-# L4 only: docker compose --profile gpu up + uncomment the dcgm job in ops/prometheus/prometheus.yml.
+# L4 only: docker compose up -d + uncomment the dcgm job in ops/prometheus/prometheus.yml.
+# Also set COMPOSE_PROFILES=gpu in .env
 services:
   prometheus:
     image: prom/prometheus:v3.1.0
@@ -48,7 +49,7 @@ services:
     container_name: leaninfer-dcgm
     profiles: [gpu]
     ports:
-      - "9400:9400"
+      - "127.0.0.1:9400:9400"
     cap_add:
       - SYS_ADMIN
     deploy:

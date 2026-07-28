@@ -1,13 +1,13 @@
-import torch, time
+import time
 import numpy as np
-from torch import nn
 from leaninfer.oracle import tokenizer        # HF Qwen3, fp32, weights loaded
-from leaninfer.qwen3.model import Qwen3MLP, Qwen3Attention, HIDDEN
-from leaninfer.qwen3.layers import build_rope, HEAD_DIM
 from leaninfer.loader import load_model
-from leaninfer.engine.llm_engine import greedy, trim, LLMEngine
+from leaninfer.engine.llm_engine import trim, LLMEngine
 from prometheus_client import start_http_server
 from leaninfer import metrics
+from dataclasses import replace
+from leaninfer.engine.engine_config import EngineConfig
+from leaninfer.qwen3.model_config import ModelConfig
 
 
 PROMPTS = [
@@ -26,12 +26,8 @@ PROMPTS = [
 SYNTHETIC = True # Set false for prompts above
 NUM_SEQS = 256
 INPUT_LEN = 16
-MAX_NEW = 64
-N_SLOTS = 16
 LINGER = 30.0
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-DTYPE = torch.float32
 
 def make_batch(
     num_seqs: int, input_len: int, jitter: int = 0, seed: int = 0
@@ -46,22 +42,25 @@ def main() -> None:
     print("Hello from lean-infer!")
     start_http_server(8000)
 
-    model = load_model(device=DEVICE, dtype=DTYPE)
+    model_config = ModelConfig.from_pretrained()
+    engine_config = EngineConfig()
+
 
     prompts: list[list[int]] = (
         make_batch(NUM_SEQS, INPUT_LEN, 0)
         if SYNTHETIC
         else [tokenizer(p).input_ids for p in PROMPTS]
     )
+    engine_config = replace(engine_config, max_len=max(len(p) for p in prompts) + engine_config.max_new)
 
-    max_len = max(len(p) for p in prompts) + MAX_NEW
-    llm = LLMEngine(n_slots=N_SLOTS, max_len=max_len, device=DEVICE, dtype=DTYPE)
+    model = load_model(model_config, engine_config)
+    llm = LLMEngine(engine_config)
     print("main.py: generating")
 
-    metrics.KV_CAPACITY.set(N_SLOTS * max_len)
+    metrics.KV_CAPACITY.set(engine_config.kv_capacity)
 
     t0 = time.perf_counter()
-    done = llm.generate(model, prompts, MAX_NEW)
+    done = llm.generate(model, prompts)
     elapsed = time.perf_counter() - t0
     done.sort(key=lambda r: r.id)                              # retire order != prompt order
 

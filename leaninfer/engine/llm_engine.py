@@ -6,30 +6,10 @@ from leaninfer import metrics
 from leaninfer.qwen3.model import Qwen3ForCausalLM
 from leaninfer.engine.scheduler import Scheduler, Request
 from leaninfer.engine.cache_manager import SlotCache
-from dataclasses import dataclass
+from leaninfer.engine.engine_config import EngineConfig
 
 
 STOP = torch.tensor(sorted(STOP_IDS))
-
-@torch.no_grad()
-def greedy(model: Qwen3ForCausalLM, ids: Tensor, mask: Tensor, n: int=64, pad_id: int=151643) -> Tensor:
-    # ids, mask: [B, seq] — left-padded input_ids and its attention mask
-    cache = DynamicCache()
-    b = ids.shape[0]
-    done = torch.zeros(b, dtype=torch.bool)
-    out: list[Tensor] = []
-    x = ids # prefill takes in full [B, seq]
-    for _ in range(n):
-        logits = model(x, cache, mask) # [B, q, VOCAB]
-        nxt = logits[:, -1].argmax(-1) 
-        nxt = torch.where(done, pad_id, nxt)  # emit pad if already finished
-        out.append(nxt)
-        done |= torch.isin(nxt, STOP) # mark rows that stopped this step
-        if done.all():
-            break
-        x = nxt[:, None] # only the new token for decode
-        mask = torch.cat([mask, mask.new_ones(b, 1)], dim=1)  # grow mask
-    return torch.stack(out, dim=1)
 
 
 def trim(row: list[int]) -> list[int]:
@@ -41,12 +21,9 @@ def trim(row: list[int]) -> list[int]:
 
 
 class LLMEngine:
-    def __init__(self, n_slots: int, max_len: int, device: torch.device | str = "cpu", dtype: torch.dtype = torch.float32) -> None:
-        self.scheduler = Scheduler(n_slots)
-        self.n_slots = n_slots
-        self.max_len = max_len
-        self.device = device
-        self.dtype = dtype
+    def __init__(self, engine_config: EngineConfig) -> None:
+        self.engine_config = engine_config
+        self.scheduler = Scheduler(engine_config)
 
 
     def run_step(self, model: Qwen3ForCausalLM, cache: SlotCache, reqs: list[Request], prefill: bool) -> None:               
@@ -83,12 +60,12 @@ class LLMEngine:
                 r.t_last = now
 
     @torch.no_grad()
-    def generate(self, model: Qwen3ForCausalLM, prompts: list[list[int]], max_new: int) -> list[Request]:
+    def generate(self, model: Qwen3ForCausalLM, prompts: list[list[int]]) -> list[Request]:
             print("llm_engine.py: engining")
             done: list[Request] = []
             for i, p in enumerate(prompts):
-                 self.scheduler.add(Request(id=i, prompt=p, max_new=max_new))
-            cache = SlotCache(self.n_slots, self.max_len, self.device, self.dtype)
+                 self.scheduler.add(Request(id=i, prompt=p, max_new=self.engine_config.max_new))
+            cache = SlotCache(model.config, self.engine_config)
 
             while self.scheduler.busy():
                 req = self.scheduler.admit()

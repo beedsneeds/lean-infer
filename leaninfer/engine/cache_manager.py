@@ -1,24 +1,22 @@
 import torch
 from torch import Tensor
-
-# ---- config (from config.json) ----
-N_LAYERS     = 28
-N_KV_HEADS   = 8 # GQA: each KV head is shared by N_HEADS // N_KV_HEADS = 2 query heads
-HEAD_DIM     = 128 # decoupled! N_HEADS * HEAD_DIM = 2048 != HIDDEN
+from leaninfer.qwen3.model_config import ModelConfig
+from leaninfer.engine.engine_config import EngineConfig
 
 
 
 
 class SlotCache:
     """slot based cache
-    Pool shape: [N_LAYERS, n_blocks, block_size, K_KV_HEADS, HEAD_DIM]
+    Pool shape: [num_hidden_layers, n_slots, max_len, num_key_value_heads, head_dim]
     """
 
-    def __init__(self, n_slots: int, max_len: int, device: torch.device | str = "cpu", dtype: torch.dtype = torch.float32) -> None:
-        shape = (N_LAYERS, n_slots, max_len, N_KV_HEADS, HEAD_DIM)
-        self.k = torch.zeros(shape, dtype=dtype, device=device)
-        self.v = torch.zeros(shape, dtype=dtype, device=device)
-        self.device = torch.device(device)
+    def __init__(self, model_config: ModelConfig, engine_config: EngineConfig) -> None:
+        shape = (model_config.num_hidden_layers, engine_config.n_slots, engine_config.max_len, 
+                 model_config.num_key_value_heads, model_config.head_dim)
+        self.k = torch.zeros(shape, dtype=engine_config.dtype, device=engine_config.device)
+        self.v = torch.zeros(shape, dtype=engine_config.dtype, device=engine_config.device)
+        self.device = torch.device(engine_config.device)
 
 
     def write(self, layer: int, slots: Tensor, pos: Tensor, k: Tensor, v: Tensor) -> None:
