@@ -71,6 +71,8 @@ def main() -> None:
     print("main.py: generating")
 
     metrics.KV_CAPACITY.set(engine_config.kv_capacity)
+    metrics.SLOTS_CAPACITY.set(engine_config.n_slots)
+
 
     t0 = time.perf_counter()
     done = llm.generate(model, prompts, budgets)

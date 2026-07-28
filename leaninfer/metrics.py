@@ -71,4 +71,8 @@ KV_CAPACITY: Gauge = Gauge(
     "leaninfer_kv_cache_capacity_tokens",
     "Total addressable token positions (n_slots * max_len). Set once per run.",
 )
+SLOTS_CAPACITY: Gauge = Gauge(
+    "leaninfer_slots_capacity",
+    "Total request slots (n_slots). Set once per run.",
+)
 

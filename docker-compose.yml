@@ -48,10 +48,14 @@ services:
     image: nvcr.io/nvidia/k8s/dcgm-exporter:3.3.9-3.6.1-ubuntu22.04
     container_name: leaninfer-dcgm
     profiles: [gpu]
+    volumes:
+      - ./ops/dcgm/counters.csv:/etc/dcgm-exporter/leaninfer-counters.csv:ro
+    command:
+      - ["-f", "/etc/dcgm-exporter/leaninfer-counters.csv"]
     ports:
       - "127.0.0.1:9400:9400"
-    cap_add:
-      - SYS_ADMIN
+    environment:
+      DCGM_EXPORTER_INTERVAL: "1000"
     deploy:
       resources:
         reservations:
