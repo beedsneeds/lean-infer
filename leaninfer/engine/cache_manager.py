@@ -8,11 +8,11 @@ from leaninfer.engine.engine_config import EngineConfig
 
 class SlotCache:
     """slot based cache
-    Pool shape: [num_hidden_layers, n_slots, max_len, num_key_value_heads, head_dim]
+    Pool shape: [num_hidden_layers, n_slots, slot_len, num_key_value_heads, head_dim]
     """
 
     def __init__(self, model_config: ModelConfig, engine_config: EngineConfig) -> None:
-        shape = (model_config.num_hidden_layers, engine_config.n_slots, engine_config.max_len, 
+        shape = (model_config.num_hidden_layers, engine_config.n_slots, engine_config.slot_len,
                  model_config.num_key_value_heads, model_config.head_dim)
         self.k = torch.zeros(shape, dtype=engine_config.dtype, device=engine_config.device)
         self.v = torch.zeros(shape, dtype=engine_config.dtype, device=engine_config.device)

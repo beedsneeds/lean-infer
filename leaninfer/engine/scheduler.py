@@ -15,7 +15,7 @@ class State(Enum):
 class Request:
     id: int
     prompt: list[int]
-    max_new: int
+    max_new_tokens: int
     state: State = State.WAITING
     slot: int = -1 # scheduler slot number
     pos: int = 0 # tokens of this request in the cache

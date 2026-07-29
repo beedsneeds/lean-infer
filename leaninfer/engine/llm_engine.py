@@ -61,12 +61,11 @@ class LLMEngine:
                 r.t_last = now
 
     @torch.no_grad()
-    def generate(self, model: Qwen3ForCausalLM, prompts: list[list[int]], max_new: list[int] | None = None) -> list[Request]:
+    def generate(self, model: Qwen3ForCausalLM, prompts: list[list[int]], max_new_tokens: list[int]) -> list[Request]:
             print("llm_engine.py: engining")
-            budgets = max_new if max_new is not None else [self.engine_config.max_new] * len(prompts)
             done: list[Request] = []
-            for i, (p, n) in enumerate(zip(prompts, budgets)):
-                self.scheduler.add(Request(id=i, prompt=p, max_new=n))
+            for i, (p, n) in enumerate(zip(prompts, max_new_tokens)):
+                self.scheduler.add(Request(id=i, prompt=p, max_new_tokens=n))
             cache = SlotCache(model.config, self.engine_config)
 
             while self.scheduler.busy():
@@ -78,7 +77,7 @@ class LLMEngine:
                      self.run_step(model, cache, self.scheduler.running, prefill=False)
 
                 for r in list(self.scheduler.running):
-                    if r.out[-1] in STOP_IDS or len(r.out) >= r.max_new:
+                    if r.out[-1] in STOP_IDS or len(r.out) >= r.max_new_tokens:
                         #   cache.free
                         self.scheduler.retire(r)
                         done.append(r)
