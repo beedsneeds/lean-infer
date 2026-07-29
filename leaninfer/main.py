@@ -11,26 +11,19 @@ from leaninfer.qwen3.model_config import ModelConfig
 
 
 PROMPTS = [
-    "1 + 1 =",
+    "What's 1 + 1?",
     "The mitochondria is the",
-    "Elect a clown, expect a",
     "Who said this and why? 'Educate, agitate, organize'",
 ]
-# PROMPTS = [
-#     "1 + 1 =",
-#     "The mitochondria is the",
-#     "Elect a clown, expect a",
-#     "Who said this and why? 'Educate, agitate, organize'",
-# ]
 
 SYNTHETIC = True # Set false for prompts above
-NUM_SEQS = 256
-INPUT_LEN = 16
-INPUT_JITTER = 8
-OUTPUT_LEN = 64
-OUTPUT_JITTER = 16 # If 0, requests retire in lockstep synchronicity. Doesn't provide much value
+NUM_SEQS = 1024
+INPUT_LEN = 128
+INPUT_JITTER = 96  # prompts uniform in [32, 224]
+OUTPUT_LEN = 256
+OUTPUT_JITTER = 192 # budgets uniform in [64, 448]
 LINGER = 30.0
-
+# If Jitter is 0, requests retire in lockstep synchronicity. Doesn't provide much value
 
 
 def make_batch(
