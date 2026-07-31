@@ -29,7 +29,13 @@ class SlotCache:
         self.v[layer, slots[:, None], cols] = v.transpose(1, 2)
 
     def read(self, layer: int, slots: Tensor, s: int) -> tuple[Tensor, Tensor]:
-        """Read past K/V upto s. Let mask determine which columns to actually access"""
+        """Read past K/V upto s. Let mask determine which columns to actually access
+
+        Statically shaped free view when the caller wants the whole pool over the whole window (CUDA Graphs)
+        Any narrower request falls back to advanced indexing
+        """
+        if s == self.k.shape[2] and slots.shape[0] == self.k.shape[1]:
+            return self.k[layer].transpose(1, 2), self.v[layer].transpose(1, 2)
         k = self.k[layer, slots, :s]
         v = self.v[layer, slots, :s]
         return k.transpose(1, 2), v.transpose(1, 2)

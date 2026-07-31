@@ -13,7 +13,7 @@ from leaninfer.engine.engine_config import EngineConfig
 # embed_tokens.weight [VOCAB, HIDDEN] is TIED to lm_head (no separate lm_head weight in the checkpoint)
 # every *_layernorm / q_norm / k_norm is a single RMSNorm scale vector -> declared as `.weight`
 # the inner `model` submodule reproduces the `model.` prefix in every checkpoint key.
-# params load as fp32 (bf16 checkpoint is cast on copy_), matching the fp32 oracle.
+# params load in engine_config.dtype, bf16 by default -- so no longer bit-comparable to the fp32 oracle.
 
 
 def load_model(model_config: ModelConfig, engine_config: EngineConfig, path: str | None = None) -> Qwen3ForCausalLM:

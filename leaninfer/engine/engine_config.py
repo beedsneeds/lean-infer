@@ -11,7 +11,10 @@ class EngineConfig:
     device: torch.device = field(
             default_factory=lambda: torch.device("cuda" if torch.cuda.is_available() else "cpu")
         )
-    dtype: torch.dtype = torch.float32
+    # Diverging from fp32 since it locks SDPA to the math backend
+    dtype: torch.dtype = torch.bfloat16
+    # Capture decode into a CUDA graph
+    cuda_graphs: bool = True
 
     @property
     def kv_capacity(self) -> int:

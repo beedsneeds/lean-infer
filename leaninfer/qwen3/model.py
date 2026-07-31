@@ -84,8 +84,8 @@ class Qwen3Model(nn.Module):
     def forward(self, input_ids: Tensor, cache: SlotCache, slots: Tensor, pos: Tensor, s: int) -> Tensor:
         q_len = input_ids.shape[1]
         h = self.embed_tokens(input_ids)
-        cos, sin = build_rope(self.config, pos, q_len)
-        m = build_mask(pos, q_len, s)
+        cos, sin = build_rope(self.config, pos, q_len, h.dtype)
+        m = build_mask(pos, q_len, s, h.dtype)
         for i, layer in enumerate(self.layers):
             h = layer(h, cos, sin, cache, i, m, slots, pos, s)
         return self.norm(h)
