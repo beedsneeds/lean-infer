@@ -6,8 +6,8 @@ import torch
 
 @dataclass(frozen=True)
 class EngineConfig:
-    n_slots: int = 32
-    slot_len: int = 512  # tokens per slot (prompt + output); sizes the KV pool. Overridden by replace() in main.py
+    n_slots: int = 64
+    slot_len: int = 2048  # tokens per slot (prompt + output); sizes the KV pool. Overridden by replace() in main.py
     device: torch.device = field(
             default_factory=lambda: torch.device("cuda" if torch.cuda.is_available() else "cpu")
         )

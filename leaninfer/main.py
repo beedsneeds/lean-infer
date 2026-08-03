@@ -18,10 +18,10 @@ PROMPTS = [
 
 SYNTHETIC = True # Set false for prompts above
 NUM_SEQS = 1024
-INPUT_LEN = 128
-INPUT_JITTER = 96  # prompts uniform in [32, 224]
-OUTPUT_LEN = 256
-OUTPUT_JITTER = 192 # budgets uniform in [64, 448]
+INPUT_LEN = 768
+INPUT_JITTER = 256  # prompts uniform in [512, 1024]
+OUTPUT_LEN = 768
+OUTPUT_JITTER = 256 # budgets uniform in [512, 1024] 
 LINGER = 30.0
 # If Jitter is 0, requests retire in lockstep synchronicity. Doesn't provide much value
 

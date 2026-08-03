@@ -17,6 +17,7 @@ OUTPUT_TOKENS: Counter = Counter(
 )
 
 # Latency
+# I'm testing under an offline, saturated batch so TTFT is heavily dependent on QUEUE_DELAY.
 TTFT: Histogram = Histogram(
     "leaninfer_ttft_seconds",
     "Time between arrival to first token. Under a saturated batch this is dominated by queue "
@@ -66,6 +67,10 @@ WAITING: Gauge = Gauge(
 KV_TOKENS: Gauge = Gauge(
     "leaninfer_kv_cache_tokens",
     "Token positions currently occupied across all slots.",
+)
+KV_RESERVED: Gauge = Gauge(
+    "leaninfer_kv_cache_reserved_tokens",
+    "Token positions reserved by running requests (running * slot_len today; "
 )
 KV_CAPACITY: Gauge = Gauge(
     "leaninfer_kv_cache_capacity_tokens",

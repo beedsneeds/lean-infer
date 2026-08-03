@@ -65,6 +65,7 @@ class Scheduler:
         metrics.QUEUE_DELAY.observe(req.t_admit - req.t_arrival)
         metrics.WAITING.set(len(self.waiting))
         metrics.RUNNING.set(len(self.running))
+        metrics.KV_RESERVED.set(len(self.running) * self.config.slot_len)
         return req
 
     # Push the slot back into free so it can be used
@@ -74,6 +75,7 @@ class Scheduler:
         self.free_slots.append(req.slot)
         self.running.remove(req)
         metrics.RUNNING.set(len(self.running))
+        metrics.KV_RESERVED.set(len(self.running) * self.config.slot_len)
 
     def busy(self) -> bool:
         return bool(self.waiting or self.running)

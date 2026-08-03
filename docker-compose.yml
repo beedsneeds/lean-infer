@@ -51,6 +51,9 @@ services:
     volumes:
       - ./ops/dcgm/counters.csv:/etc/dcgm-exporter/leaninfer-counters.csv:ro
     command: ["-f", "/etc/dcgm-exporter/leaninfer-counters.csv"]
+    # DCGM_FI_PROF_* fields in counters.csv need the profiling engine
+    cap_add:
+      - SYS_ADMIN
     ports:
       - "127.0.0.1:9400:9400"
     environment:
