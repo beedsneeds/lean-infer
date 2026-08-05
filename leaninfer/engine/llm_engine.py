@@ -142,6 +142,7 @@ class LLMEngine:
             while self.scheduler.busy():
                 req = self.scheduler.admit()
                 if req is not None:
+                    print("llm_engine.py: admiting")
                     # cache.allocate skipping this since no need
                     self.run_step(model, cache, [req], prefill=True) # everything else stalls
                 else:
