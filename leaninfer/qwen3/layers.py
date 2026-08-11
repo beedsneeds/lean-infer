@@ -22,15 +22,15 @@ def rotate_half(x: Tensor) -> Tensor:
 def apply_rope(x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
     return x * cos + rotate_half(x) * sin
 
-def build_mask(pos: Tensor, q_len: int, s: int, dtype: torch.dtype) -> Tensor:
-    """returns additive float mask [B, 1, q_len, S] for SDPA (0=attend, -inf=forbid)"""
-    # 1 = real, 0 = pad
-    dev = pos.device
-    key_pos = torch.arange(s, device=dev)                                  # [S]
-    query_pos = pos[:, None] + torch.arange(q_len, device=dev)             # [B, q_len]
-    allowed = key_pos[None, None, :] <= query_pos[:, :, None]  # [B, q_len, S]
-    # cast so SDPA doesn't promote the whole attention to the mask's dtype
-    return torch.where(allowed, 0.0, float("-inf"))[:, None].to(dtype)   # [B, 1, q_len, S]
+# def build_mask(pos: Tensor, q_len: int, s: int, dtype: torch.dtype) -> Tensor:
+#     """returns additive float mask [B, 1, q_len, S] for SDPA (0=attend, -inf=forbid)"""
+#     # 1 = real, 0 = pad
+#     dev = pos.device
+#     key_pos = torch.arange(s, device=dev)                                  # [S]
+#     query_pos = pos[:, None] + torch.arange(q_len, device=dev)             # [B, q_len]
+#     allowed = key_pos[None, None, :] <= query_pos[:, :, None]  # [B, q_len, S]
+#     # cast so SDPA doesn't promote the whole attention to the mask's dtype
+#     return torch.where(allowed, 0.0, float("-inf"))[:, None].to(dtype)   # [B, 1, q_len, S]
 
 
 

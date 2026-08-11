@@ -11,6 +11,8 @@ profiled phase; open them at ui.perfetto.dev.
     python profiler.py --decode     # decode only
 """
 
+# TODO: Update profiler to use BlockCache
+
 import argparse
 from contextlib import nullcontext
 from dataclasses import replace

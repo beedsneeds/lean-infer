@@ -40,6 +40,11 @@ TPOT: Histogram = Histogram(
     "Mean inter-token latency per request",
     buckets=_PER_TOKEN,
 )
+ITL: Histogram = Histogram(
+    "leaninfer_itl_seconds",
+    "Wall time between consecutive decode steps (including prefill stalls)",
+    buckets=(0.045, 0.05, 0.055, 0.06, 0.07, 0.09, 0.12, 0.2, 0.5),
+)
 STEP_DURATION: Histogram = Histogram(
     "leaninfer_step_duration_seconds",
     "Wall time of one engine step.",
@@ -47,7 +52,7 @@ STEP_DURATION: Histogram = Histogram(
     buckets=_STEP,
 )
 
-# Delete once you check variance
+# TODO: Keep for chunked prefill and real prompts
 OUTPUT_LEN: Histogram = Histogram(
     "leaninfer_output_len_tokens",
     "Tokens generated per request before stop or budget exhaustion.",
@@ -70,14 +75,31 @@ KV_TOKENS: Gauge = Gauge(
 )
 KV_RESERVED: Gauge = Gauge(
     "leaninfer_kv_cache_reserved_tokens",
-    "Token positions reserved by running requests (running * slot_len today; "
+    "Token positions held by allocated KV blocks (blocks_held * block_size). ",
 )
 KV_CAPACITY: Gauge = Gauge(
     "leaninfer_kv_cache_capacity_tokens",
-    "Total addressable token positions (n_slots * slot_len). Set once per run.",
+    "Total addressable token positions (usable_blocks * block_size). Set once per run.",
 )
+KV_UTILIZATION: Histogram = Histogram(
+    "leaninfer_kv_utilization_ratio",
+    "Reserved / capacity, sampled once per engine step",
+    buckets=(0.5, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.98, 1.0),
+)
+
 SLOTS_CAPACITY: Gauge = Gauge(
     "leaninfer_slots_capacity",
     "Total request slots (n_slots). Set once per run.",
+)
+
+# Preemption
+PREEMPTIONS: Counter = Counter(
+    "leaninfer_preemptions",
+    "Running requests evicted to free KV blocks. Each restarts from token 0.",
+)
+RECOMPUTE_TOKENS: Counter = Counter(
+    "leaninfer_recompute_tokens",
+    "KV positions discarded by preemption and regenerated later"
+    "Note this work is also counted in PROMPT_TOKENS on re-prefill, so subtract it for goodput.",
 )
 

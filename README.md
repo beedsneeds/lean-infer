@@ -1,10 +1,16 @@
 # lean-infer
 
-WIP inference engine. Currently having continuous batching running with observability plugged in.
+Inference engine with
 
-Requires an NVIDIA GPU. Developed on a GCP L4 running the Deep Learning VM stack image.
+- Continuous Batching and Paged Attention
+- Optimizations: CUDA Graphs
+- Observability stack (Prometheus + Grafana)
 
-Run the engine standalone with a synthetic batch. Prints tok/s, no other metrics tracked.
+Developed and benchmarked on an NVIDIA L4 (GCP) running the Deep Learning VM stack, using a saturated, offline batch.
+
+## Getting Started
+
+Run the engine standalone with a synthetic batch. Turn on observability for the interesting stuff.
 
 ```
 uv run leaninfer
@@ -17,24 +23,21 @@ Beyond what GCP's Deep Learning VM stack provides, you'll need
 ```bash
 # Docker Compose to run the metrics stack
 sudo apt install docker.io docker-compose-v2
-# To configure the nvidia runtime so dcgm-exporter can see the GPU
+
+# (Optional) If you need GPU metrics,
+# 1. configure the nvidia runtime so dcgm-exporter can see the GPU
 sudo nvidia-ctk runtime configure --runtime=docker
-# To load the nvidia runtime; reconnect to the instance after usermod
+# 2. Copy over the `.env.example` with no changes. Just makes docker compose commands cleaner.
+cp .env.example .env
+# 3. load the nvidia runtime
 sudo systemctl restart docker
 sudo usermod -aG docker $USER
+# Then reconnect to the instance after usermod
 ```
 
-Copy over the `.env.example` with no changes. Just makes docker compose commands cleaner.
-Skip if you don't want dcgm-exporter scraping GPU metrics
+Start Prometheus, Grafana, and dcgm-exporter.
 
 ```
-cp .env.example .env
-```
-
-Start Prometheus, Grafana, and dcgm-exporter. Dry run with `config` to catch any YAML typos.
-
-```
-docker compose config >/dev/null && echo OK
 docker compose up -d
 ```
 
@@ -47,32 +50,29 @@ gcloud compute ssh --zone <ZONE> <INSTANCE> \
  -- -N -L 3000:localhost:3000 -L 9090:localhost:9090 -L 9400:localhost:9400
 ```
 
-Run the engine and see `localhost:3000` and `localhost:9090/targets`
+Run the engine and check `localhost:3000` and `localhost:9090/targets`
 
 ```
 uv run leaninfer
 ```
 
-## Optimizations
+## Design and Challenges
 
-### Making Decode 10x Faster
+#### 10x Faster Decode
 
-I conducted a few runs to get some nice graphs once I built observability and continuous batching. I settled at 32 slots, with prompts of 128 ± 96 tokens and output budgets of 256 ± 192 tokens. Both decode and prefill were much worse than the roofline numbers but since decode was ~97% of wall-clock time, I prioritized that.
+Once I built observability and continuous batching, I saw both decode and prefill were much worse than the roofline numbers. Since decode was ~97% of wall-clock time and 8× off its bandwidth floor (~20 ms), I prioritized that.
 
-A decode step re-reads the fp32 weights (~2.4 GB) and KV cache (~3.6 GB), so on an L4's 300 GB/s, the floor is ~20 ms. So, decode was 8× off its bandwidth floor.
-
-![Comparison](assets/phase2.5_comparison.png)
-
-**The Process:**
-
-- The profile showed SDPA silently fell back to the MATH backend, showing up as separate `bmm`, `mul` and `softmax` kernels. It did not use the fu sed cuDNN attention kernels like I assumed it would. Previously, I had accepted the cost of running the model in fp32 because I was prototyping on my laptop, but I hadn't realized it would also change which attention backend was used.
-- Once I swapped to bf16 and asserted cuDNN SDPA was used, attention got fast enough that I because host-bound with the GPU being mostly idle. CUDA Graphs became relevant as a fix. CUDA Graphs fundamentally require static shapes and static shapes are efficient only when using fused kernels. So this was an entire package that needed to be shipped together.
+SDPA had silently fallen back to the MATH backend (`bmm`, `mul`, `softmax` kernels instead of one cuDNN fused kernel). I had been prototyping the model in fp32 on cpu but to use fused kernels, I didn't realize I needed to swap to bf16/fp16 when I switched over to a cloud GPU.
 
 <p align="center">
 <img src="assets/phase2_trace.png" width="450">
 </p>
 
-**Results (in bf16)**: A 9.8x faster decode step, which also showed through improved decode throughput and wall clock time. The change to bf16 halved the bandwidth floor for both decode and prefill, but **curiously enough did nothing for prefill step time**.
+Once cuDNN SDPA was working, attention got fast enough that it became host-bound with the GPU being mostly idle. CUDA Graphs was built for this regime.
+
+![Comparison](assets/phase2.5_comparison.png)
+
+**Results (in bf16)**: A 9.8x faster decode step and improved decode throughput and wall clock time. Note: the change to bf16 halved the bandwidth floor (~10 ms).
 
 |                          | before    | after       |     |
 | ------------------------ | --------- | ----------- | --- |
@@ -84,3 +84,17 @@ A decode step re-reads the fp32 weights (~2.4 GB) and KV cache (~3.6 GB), so on 
 |                          |           |             |     |
 
 ---
+
+#### PagedAttention
+
+I changed the workload since prefill had been below the L4's ridge point (~400 token prompt length) so far, making it just another memory-bound workload. Both prompt length and max output tokens were now uniformly distributed in `[512, 1024]` (which explains the periodicity of prefill throughput), and I also bumped batch size to 64 requests.
+
+< add the stats of old vs new regime>
+
+> Note: The traditional characterization is that prefill is compute-bound while decode is memory-bound. I learned later this doesn't always hold true...\* _cue chunked prefill_\*. Until I build that/unified token budget, I'll retain the same synthetic workload since prefill will mostly be below the ridge point if using a real dataset like ShareGPT with my current prefill at B=1.
+
+<p align="center">
+<img src="assets/pre phase 3 change prompt 1 compilation.png">
+</p>
+
+KV cache utilization (~60%) could be improved, so I swapped to paged kv cache while keeping total kv memory the same (64 slots \* 2048 slot_length now became 256 block_size \* 512 num_blocks). sing Flash Attentions flash_attn_with_kvcache constrained my block size options since it needed multiples of 256. I didn't have to think about the read path but paid for it in more internal fragmentation compared to, say, vLLM's default of 16.
