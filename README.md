@@ -1,9 +1,9 @@
 # lean-infer
 
-Inference engine with
+Inference engine running Qwen3 0.6B with
 
 - Continuous Batching and Paged Attention
-- Optimizations: CUDA Graphs
+- Optimizations: CUDA Graphs, FlashAttention
 - Observability: Prometheus + Grafana
 
 Developed and benchmarked on an NVIDIA L4 (GCP) running the Deep Learning VM stack, using a saturated, offline batch.
@@ -32,7 +32,7 @@ cp .env.example .env
 # 3. load the nvidia runtime
 sudo systemctl restart docker
 sudo usermod -aG docker $USER
-# Then reconnect to the instance after usermod
+# Reconnect to the instance after usermod
 ```
 
 Start Prometheus, Grafana, and dcgm-exporter.
@@ -58,7 +58,7 @@ uv run leaninfer
 
 ## Design and Challenges
 
-#### 10x Faster Decode
+### 10x Faster Decode
 
 Once I built observability and continuous batching, I saw both decode and prefill were much worse than the roofline numbers. Since decode was ~97% of wall-clock time and 8× off its bandwidth floor (~20 ms), I prioritized that.
 
@@ -74,45 +74,51 @@ Once cuDNN SDPA was working, attention got fast enough that it became host-bound
 
 **Results (in bf16)**: A 9.8x faster decode step and improved decode throughput and wall clock time. Note: the change to bf16 halved the bandwidth floor (~10 ms), so we aren't quite comparing apples to apples.
 
-|                          | before    | after       |     |
-| ------------------------ | --------- | ----------- | --- |
-| decode step              | 165 ms    | 16.9 ms     |     |
-| prefill step             | 40 ms     | 40 ms       |     |
-| decode throughput        | 188 tok/s | 1,470 tok/s |     |
-| TPOT                     | 170 ms    | 21.8 ms     |     |
-| 1024 requests wall clock | 23 min    | 3.0 min     |     |
-|                          |           |             |     |
+|                          | before    | after       |
+| ------------------------ | --------- | ----------- |
+| decode step              | 165 ms    | 16.9 ms     |
+| prefill step             | 40 ms     | 40 ms       |
+| decode throughput        | 188 tok/s | 1,470 tok/s |
+| TPOT                     | 170 ms    | 21.8 ms     |
+| 1024 requests wall clock | 23 min    | 3.0 min     |
 
 ---
 
-#### PagedAttention and Workload Gaps
+### PagedAttention and Workload Gaps
 
 I changed the workload since prefill had been below the L4's ridge point (~400 token prompt length) so far, making it just another memory-bound workload. Both prompt length and max output tokens were now uniformly distributed in `[512, 1024]` (which explains the periodicity of prefill throughput in the panel below), and I also bumped batch size to 64 requests.
 
-< add the stats of old vs new regime>
-floor N=128 (old) N=768 (new)
-compute 1.28 ms 8.12 ms
-memory 4.02 ms 4.27 ms
-binding memory compute
-TODO: need some proofs for this data
-
-> Note: The traditional characterization is that prefill is compute-bound while decode is memory-bound. I learned later this doesn't always hold true...\* _cue chunked prefill_\*. Until I build that alongside a unified token budget, I'll retain the same synthetic workload since prefill (set at B=1) will mostly be below the ridge point if using a real dataset like ShareGPT.
+> Note: The traditional characterization is that prefill is compute-bound while decode is memory-bound. I learned later this doesn't always hold true... \*_cue chunked prefill_\*. Until I build that alongside a unified token budget, I'll retain the same synthetic workload since prefill (set at B=1) will mostly be below the ridge point if using a real dataset like ShareGPT.
 
 <p align="center">
-<img src="assets/pre phase 3 change prompt 1 compilation.png">
+<img src="assets/pre_phase_3_change_prompt_1_compilation.png">
 </p>
 
 KV cache utilization (~60%) is the next target for improvement, which is accomplished with paged KV cache. Keeping total kv memory constant, the previous 64 slots \* 2048 slot_length now became 512 num_blocks \* 256 block_size. Rather than hand-write a paged KV kernel, I chose to use Flash Attention's flash_attn_with_kvcache. However, this constrained my block size options since FA needed multiples of 256. I didn't have to think about the KV read path but paid for it in more internal fragmentation compared to, say, vLLM's default of 16. I also bumped batch size to 128 to accommodate more requests; 128 is quite high though and I always pay a small CUDA Graph cost in capturing launches over all 128 requests, real or idle.
 
 <p align="center">
-<img src="assets/phase 3 uniform distribution batch compilation.png">
+<img src="assets/phase_3_uniform_distribution_batch_compilation.png">
 </p>
 
 The panels show "numbers go up" but there's a ton of nuance here:
 
 - Honesty where honesty is due: The improvements to throughput (prefill; Panel 2 yellow) and prefill time (Panel 4) are almost completely attributed to FlashAttention.
-- The improvements to KV cache utilization (Panel 1), throughput (decode; Panel 2 green) and concurrency (Panel 3) are attributed to the Paged KV cache I built. This represents a particular ideal setup: where Goodput is 100% of the work done, i.e. no request or token ever generated by the engine is ever thrown away (no preemptions). The obvious cost for 100\% goodput is lower concurrency since I have to allow some blocks remain idle until they are eventually filled
+- The improvements to KV cache utilization (Panel 1), throughput (decode; Panel 2 green) and concurrency (Panel 3) are attributed to the Paged KV cache I built. This represents a particular ideal setup: where Goodput is 100\% of the work done, i.e. no request or token generated by the engine is ever thrown away (no preemptions). The obvious cost for 100\% goodput is lower concurrency since I have to allow some blocks remain idle until they are eventually filled.
 
-I chose to demonstrate a 100% Goodput baseline by reserving every running request's full expected generation length. I forced this because my workload is predictable (uniform in [512, 1024]) and garbage (vocab IDs randomly generated), so a request will almost never emit a stop token and will exhaust its token budget. Any utilization knob I turn in this regime is just cherry picked to be flattering. Real workloads have an unbounded generation length (capped by an engine's max_new_token policy) that the scheduler can't reliably predict.
+I chose to demonstrate a 100\% Goodput baseline by reserving every running request's full expected generation length. I forced this because my workload is predictable (uniform in [512, 1024]) and garbage (vocab IDs randomly generated), so a request will almost never emit a stop token and will exhaust its token budget. Any utilization knob I turn in this regime is just cherry picked to be flattering. Real workloads have an unbounded generation length (capped by an engine's max_new_token policy) that the scheduler can't reliably predict.
 
-Future work is to accommodate for that with an admission-backoff mechanism when some metric (number of preemptions or goodput) reaches a tolerance limit.
+---
+
+### Future Work (Chunked Prefill)
+
+<p align="center">
+<img src="assets/phase_3_traces_stacked.png">
+<br>
+<em>Top: Prefill, eager. Bottom: Decode, CUDA Graph captured.</em>
+</p>
+
+Multiple threads all converge on implementing chunked prefill:
+
+- CUDA Graphs: The prefill path is still eager, which shows up as a ton of GPU idle time in the profiles. Chunked prefill, with its fixed chunk size, is an ideal static shape for CUDA Graph capture.
+- Staying Above The Ridge Point: When prefill chunks are packed into the same budget as decode (unified token budget), I can stay compute-bound even with very short prompts since I won't be bound to prefill stalls with batch B=1. Swapping to a real dataset like ShareGPT would no longer impact performance.
+- A Useful Engine Knob: An adaptive admission policy is now justified since generation is unbounded; I can't predict how many tokens will be generated, so I can't hack my way to 100% goodput. I must now gate admission of new requests when preemptions or goodput reach some tolerance limit.
