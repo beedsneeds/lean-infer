@@ -1,14 +1,8 @@
 # lean-infer
 
-Inference engine running a saturated, offline batch on Qwen3 0.6B with
+An inference engine for Qwen3 0.6B, written from scratch in ~1000 lines: continuous batching, paged attention and CUDA graphs, instrumented with Prometheus + Grafana. It decodes a saturated batch at ~1,500 tok/s on an NVIDIA L4.
 
-- Continuous Batching and Paged Attention
-- Optimizations: CUDA Graphs, FlashAttention
-- Observability: Prometheus + Grafana
-
-Developed and benchmarked on an NVIDIA L4 (GCP) running the Deep Learning VM stack.
-
-I use a saturated, offline batch and all optimizations target improving throughput since it is the maximum achievable number (burst concentration stays uniform). Tuning the batch to a mean inter-arrival time would mean better TTFT but, up to a certain level, that's mostly/solely dependent on a single knob: inter-arrival rate.
+Developed and benchmarked on GCP's Deep Learning VM stack.
 
 ## Getting Started
 
@@ -60,6 +54,12 @@ uv run leaninfer
 
 ## Design and Challenges
 
+### Preface: Why a Saturated, Offline Batch
+
+Every optimization here targets throughput, because a permanently full queue is the only regime where throughput measures the engine itself. Below saturation it measures the arrival rate I picked, not anything the engine is doing.
+
+Two knobs: _mean inter-arrival rate_ and _burst arrival concentration_, can help test latency under realistic workloads, but a steady-state maximum throughput is something I should nail first.
+
 ### 10x Faster Decode
 
 Once I built observability and continuous batching, I saw both decode and prefill were much worse than the roofline numbers. Since decode was ~97% of wall-clock time and 8× off its bandwidth floor (~20 ms), I prioritized that.
@@ -101,6 +101,8 @@ KV cache utilization (~60%) is the next target for improvement, which is accompl
 <p align="center">
 <img src="assets/phase_3_uniform_distribution_batch_compilation.png">
 </p>
+
+TODO: a metrics table for comparison
 
 The panels show "numbers go up" but there's a ton of nuance here:
 
